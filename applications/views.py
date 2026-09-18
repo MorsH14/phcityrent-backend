@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -5,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from .models import Application
 from .serializers import ApplicationSerializer
 from .permissions import IsPropertyLandlord
+from leases.models import Lease
 
 
 class ApplicationCreateView(generics.CreateAPIView):
@@ -48,6 +50,16 @@ class ApplicationDecisionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        application.status = new_status
-        application.save()
+        with transaction.atomic():
+            application.status = new_status
+            application.save()
+
+            if new_status == Application.Status.APPROVED:
+                Lease.objects.create(
+                    application=application,
+                    rent_amount=application.property.price,
+                    start_date=request.data.get('start_date'),
+                    end_date=request.data.get('end_date'),
+                )
+
         return Response(ApplicationSerializer(application).data)
